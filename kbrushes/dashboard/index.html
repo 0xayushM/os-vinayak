@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vinayak Brain OS — KBrushes Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --border:    #2a2d3a;
+      --accent:    #4f8ef7;
+      --green:     #22c55e;
+      --yellow:    #f59e0b;
+      --red:       #ef4444;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --font:      'Inter', system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header h1 { font-size: 16px; font-weight: 600; letter-spacing: .3px; }
+    header .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .health-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green); display: inline-block; margin-right: 6px;
+    }
+    .health-dot.warn { background: var(--yellow); }
+    .health-dot.error { background: var(--red); }
+
+    /* ── Grid ────────────────────────────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 14px;
+      padding: 16px;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    .grid-wide { grid-column: 1 / -1; }
+
+    /* ── Cards ───────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+      transition: border-color .2s;
+    }
+    .card:hover { border-color: var(--accent); }
+    .card.stale  { border-left: 3px solid var(--yellow); }
+    .card.error  { border-left: 3px solid var(--red); }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .card-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .badge {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 20px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-hourly { background: rgba(79,142,247,.15); color: var(--accent); }
+    .badge-daily  { background: rgba(100,116,139,.15); color: var(--muted); }
+    .badge-stale  { background: rgba(245,158,11,.15);  color: var(--yellow); }
+
+    /* ── KPI numbers ─────────────────────────────────────────── */
+    .kpi-row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .kpi { flex: 1; min-width: 90px; }
+    .kpi-value { font-size: 22px; font-weight: 700; line-height: 1.1; }
+    .kpi-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* ── Tables ──────────────────────────────────────────────── */
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { color: var(--muted); font-weight: 600; text-align: left;
+         padding: 4px 0; border-bottom: 1px solid var(--border); }
+    td { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+    tr:last-child td { border-bottom: none; }
+    td.right { text-align: right; }
+    th.right { text-align: right; }
+
+    /* ── Horizontal bar ──────────────────────────────────────── */
+    .bar-list { display: flex; flex-direction: column; gap: 8px; }
+    .bar-item { }
+    .bar-label { display: flex; justify-content: space-between;
+                 font-size: 11px; margin-bottom: 3px; }
+    .bar-track { height: 5px; background: var(--border); border-radius: 3px; }
+    .bar-fill  { height: 100%; border-radius: 3px; background: var(--accent); }
+
+    /* ── Status pill ─────────────────────────────────────────── */
+    .pill {
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 20px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .pill-green  { background: rgba(34,197,94,.15);  color: var(--green); }
+    .pill-yellow { background: rgba(245,158,11,.15); color: var(--yellow); }
+    .pill-red    { background: rgba(239,68,68,.15);  color: var(--red); }
+    .pill-blue   { background: rgba(79,142,247,.15); color: var(--accent); }
+
+    /* ── Sync footer ─────────────────────────────────────────── */
+    .sync-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: auto;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .sync-footer button {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 10px;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .sync-footer button:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Loading skeleton ────────────────────────────────────── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--border) 25%, #2f3344 50%, var(--border) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 4px;
+      height: 18px;
+      width: 70%;
+    }
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ── Section dividers ────────────────────────────────────── */
+    .section-label {
+      grid-column: 1 / -1;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 4px 0 0;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── Canvas containers ───────────────────────────────────── */
+    .chart-wrap { position: relative; height: 180px; }
+
+    @media (max-width: 640px) {
+      .grid { padding: 10px; gap: 10px; }
+      .kpi-value { font-size: 18px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────────────────── -->
+<header>
+  <div>
+    <h1>🪣 Vinayak Brain OS <span style="font-weight:400;color:var(--muted)">/ KBrushes</span></h1>
+    <div class="sub" id="last-refresh">Loading…</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span class="health-dot" id="health-dot"></span>
+    <span id="health-label" style="font-size:12px;color:var(--muted)">Checking…</span>
+    <button onclick="refreshAll()"
+            style="background:var(--accent);color:#fff;border:none;
+                   border-radius:6px;padding:6px 14px;font-size:12px;
+                   cursor:pointer;font-weight:600">
+      ↻ Refresh All
+    </button>
+  </div>
+</header>
+
+<!-- ── Dashboard grid ─────────────────────────────────────────────────── -->
+<div class="grid" id="grid">
+
+  <!-- Section: Strategic -->
+  <div class="section-label">📊 Strategic — Updated Daily</div>
+
+  <!-- S1 Revenue KPIs -->
+  <div class="card" id="card-revenue-summary">
+    <div class="card-header">
+      <div class="card-title">Revenue KPIs</div>
+      <span class="badge badge-daily">Daily</span>
+    </div>
+    <div class="kpi-row" id="revenue-kpis"><div class="skeleton"></div></div>
+    <div class="sync-footer">
+      <span id="sync-revenue-summary"></span>
+    </div>
+  </div>
+
+  <!-- S12 Order Book KPIs -->
+  <div class="card" id="card-orders-summary">
+    <div class="card-header">
+      <div class="card-title">Order Book</div>
+      <span class="badge badge-hourly">Hourly</span>
+    </div>
+    <div class="kpi-row" id="orders-kpis"><div class="skeleton"></div></div>
+    <div class="sync-footer">
+      <span id="sync-orders-summary"></span>
+      <button onclick="triggerSync('sales_orders')">↻</button>
+    </div>
+  </div>
+
+  <!-- S9 Purchases KPIs -->
+  <div class="card" id="card-purchases-summary">
+    <div class="card-header">
+      <div class="card-title">Purchases</div>
+      <span class="badge badge-daily">Daily</span>
+    </div>
+    <div class="kpi-row" id="purchases-kpis"><div class="skeleton"></div></div>
+    <div class="sync-footer">
+      <span id="sync-purchases-summary"></span>
+    </div>
+  </div>
+
+  <!-- S2 Monthly Revenue Trend (full width) -->
+  <div class="card grid-wide" id="card-revenue-trend">
+    <div class="card-header">
+      <div class="card-title">Monthly Revenue Trend</div>
+      <span class="badge badge-daily">Daily</span>
+    </div>
+    <div class="chart-wrap"><canvas id="chart-revenue-trend"></canvas></div>
+    <div class="sync-footer"><span id="sync-revenue-trend"></span></div>
+  </div>
+
+  <!-- S3 Customer Concentration -->
+  <div class="card" id="card-concentration">
+    <div class="card-header">
+      <div class="card-title">Customer Concentration</div>
+      <span class="badge badge-daily">Daily</span>
+    </div>
+    <div class="chart-wrap"><canvas id="chart-concentration"></canvas></div>
+    <div class="sync-footer"><span id="sync-concentration"></span></div>
+  </div>
+
+  <!-- S4 Top Customers -->
+  <div class="card" id="card-top-customers">
+    <div class="card-header">
+      <div class="card-title">Top Customers by Revenue</div>
+      <span class="badge badge-daily">Daily</span>
+    </div>
+    <div class="bar-list" id="bar-top-customers"><div class="skeleton"></div></div>
+    <div class="sync-footer"><span id="sync-top-customers"></span></div>
+  </div>
+
+  <!-- S5 Top SKUs -->
+  <div class="card" id="card-top-skus">
+    <div class="card-header">
+      <div class="card-title">Top SKUs by Revenue</div>
+      <span class="badge badge-daily">Daily</span>
+    </div>
+    <div class="bar-list" id="bar-top-skus"><div class="skeleton"></div></div>
+    <div class="sync-footer"><span id="sync-top-skus"></span></div>
+  </div>
+
+  <!-- S6 Inventory KPIs -->
+  <div class="card" id="card-inventory-summary">
+    <div class="card-header">
+      <div class="card-title">Inventory</div>
+      <span class="badge badge-hourly">Hourly</span>
+    </div>
+    <div class="kpi-row" id="inventory-kpis"><div class="skeleton"></div></div>
+    <div class="sync-footer">
+      <span id="sync-inventory-summary"></span>
+      <button onclick="triggerSync('inventory_valuation')">↻</button>
+    </div>
+  </div>
+
+  <!-- S7 Inventory by Category -->
+  <div class="card" id="card-inventory-categories">
+    <div class="card-header">
+      <div class="card-title">Stock by Category</div>
+      <span class="badge badge-hourly">Hourly</span>
+    </div>
+    <div class="bar-list" id="bar-inv-categories"><div class="skeleton"></div></div>
+    <div class="sync-footer">
+      <span id="sync-inventory-categories"></span>
+      <button onclick="triggerSync('inventory_valuation')">↻</button>
+    </div>
+  </div>
+
+  <!-- S8 Top Holdings -->
+  <div class="card" id="card-top-holdings">
+    <div class="card-header">
+      <div class="card-title">Highest-Value Stock</div>
+      <span class="badge badge-hourly">Hourly</span>
+    </div>
+    <div id="tbl-top-holdings"><div class="skeleton"></div></div>
+    <div class="sync-footer">
+      <span id="sync-top-holdings"></span>
+      <button onclick="triggerSync('inventory_valuation')">↻</button>
+    </div>
+  </div>
+
+  <!-- S10 Top Vendors -->
+  <div class="card" id="card-top-vendors">
+    <div class="card-header">
+      <div class="card-title">Top Vendors by Spend</div>
+      <span class="badge badge-daily">Daily</span>
+    </div>
+    <div class="bar-list" id="bar-top-vendors"><div class="skeleton"></div></div>
+    <div class="sync-footer"><span id="sync-top-vendors"></span></div>
+  </div>
+
+  <!-- S11 Production -->
+  <div class="card" id="card-production-summary">
+    <div class="card-header">
+      <div class="card-title">Production</div>
+      <span class="badge badge-hourly">Hourly</span>
+    </div>
+    <div class="kpi-row" id="production-kpis"><div class="skeleton"></div></div>
+    <div class="sync-footer">
+      <span id="sync-production-summary"></span>
+      <button onclick="triggerSync('process_details')">↻</button>
+    </div>
+  </div>
+
+  <!-- Section: Operational -->
+  <div class="section-label">🚨 Operational — Updated Hourly</div>
+
+  <!-- O1 AR Aging -->
+  <div class="card" id="card-ar-aging">
+    <div class="card-header">
+      <div class="card-title">AR Aging</div>
+      <span class="badge badge-hourly">Hourly</span>
+    </div>
+    <div id="tbl-ar-aging"><div class="skeleton"></div></div>
+    <div class="sync-footer">
+      <span id="sync-ar-aging"></span>
+      <button onclick="triggerSync('ar_aging')">↻</button>
+    </div>
+  </div>
+
+  <!-- O2 AR Customer Exposure -->
+  <div class="card" id="card-ar-customers">
+    <div class="card-header">
+      <div class="card-title">Customer AR Exposure</div>
+      <span class="badge badge-hourly">Hourly</span>
+    </div>
+    <div id="tbl-ar-customers"><div class="skeleton"></div></div>
+    <div class="sync-footer">
+      <span id="sync-ar-customers"></span>
+      <button onclick="triggerSync('ar_aging')">↻</button>
+    </div>
+  </div>
+
+  <!-- O3 Overdue POs -->
+  <div class="card" id="card-overdue-pos">
+    <div class="card-header">
+      <div class="card-title">Overdue Purchase Orders</div>
+      <span class="badge badge-hourly">Hourly</span>
+    </div>
+    <div id="tbl-overdue-pos"><div class="skeleton"></div></div>
+    <div class="sync-footer">
+      <span id="sync-overdue-pos"></span>
+      <button onclick="triggerSync('purchase_orders')">↻</button>
+    </div>
+  </div>
+
+  <!-- O4 WIP -->
+  <div class="card" id="card-wip">
+    <div class="card-header">
+      <div class="card-title">Production WIP</div>
+      <span class="badge badge-hourly">Hourly</span>
+    </div>
+    <div id="tbl-wip"><div class="skeleton"></div></div>
+    <div class="sync-footer">
+      <span id="sync-wip"></span>
+      <button onclick="triggerSync('process_details')">↻</button>
+    </div>
+  </div>
+
+  <!-- O5 Overdue Orders -->
+  <div class="card" id="card-overdue-orders">
+    <div class="card-header">
+      <div class="card-title">Overdue Order Confirmations</div>
+      <span class="badge badge-hourly">Hourly</span>
+    </div>
+    <div id="tbl-overdue-orders"><div class="skeleton"></div></div>
+    <div class="sync-footer">
+      <span id="sync-overdue-orders"></span>
+      <button onclick="triggerSync('sales_orders')">↻</button>
+    </div>
+  </div>
+
+</div><!-- /grid -->
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────
+const API = window.location.hostname === 'localhost'
+  ? 'http://localhost:8000'
+  : '';  // same origin in production
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+const INR = v => '₹' + (v >= 1e7
+  ? (v/1e7).toFixed(2) + ' Cr'
+  : v >= 1e5
+    ? (v/1e5).toFixed(2) + ' L'
+    : Number(v).toLocaleString('en-IN'));
+
+function timeAgo(isoStr) {
+  if (!isoStr) return 'never synced';
+  const diff = Math.floor((Date.now() - new Date(isoStr)) / 60000);
+  if (diff < 1) return 'just now';
+  if (diff < 60) return diff + ' min ago';
+  const h = Math.floor(diff / 60);
+  return h + 'h ' + (diff % 60) + 'm ago';
+}
+
+function setSyncLabel(id, meta) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = meta?.last_synced_at ? timeAgo(meta.last_synced_at) : '—';
+}
+
+function setStale(cardId, stale) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  card.classList.toggle('stale', !!stale);
+}
+
+function barList(items, labelFn, valueFn, maxVal) {
+  return items.map(it => {
+    const pct = Math.min(100, (valueFn(it) / maxVal) * 100);
+    return `<div class="bar-item">
+      <div class="bar-label">
+        <span>${labelFn(it)}</span>
+        <span style="color:var(--text)">${INR(valueFn(it))}</span>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
+}
+
+async function apiFetch(path) {
+  const r = await fetch(API + path);
+  if (!r.ok) throw new Error(r.status + ' ' + path);
+  return r.json();
+}
+
+// ── Render functions ──────────────────────────────────────────────────────
+
+function renderRevenueSummary(resp) {
+  const d = resp.data, m = resp.meta;
+  document.getElementById('revenue-kpis').innerHTML = `
+    <div class="kpi"><div class="kpi-value">${INR(d.period_total)}</div><div class="kpi-label">Last 30 days</div></div>
+    <div class="kpi"><div class="kpi-value">${INR(d.ytd_total)}</div><div class="kpi-label">YTD Revenue</div></div>
+    <div class="kpi"><div class="kpi-value">${d.customer_count}</div><div class="kpi-label">Customers billed</div></div>
+  `;
+  setSyncLabel('sync-revenue-summary', m);
+  setStale('card-revenue-summary', m.stale);
+}
+
+let trendChart;
+function renderRevenueTrend(resp) {
+  const d = resp.data, m = resp.meta;
+  const labels = d.months.map(r => r.month);
+  const values = d.months.map(r => r.revenue);
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart(
+    document.getElementById('chart-revenue-trend').getContext('2d'),
+    {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Revenue',
+          data: values,
+          backgroundColor: 'rgba(79,142,247,0.7)',
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,.05)' }, ticks: { color: '#64748b' } },
+          y: { grid: { color: 'rgba(255,255,255,.05)' }, ticks: { color: '#64748b',
+               callback: v => '₹' + (v/1e5).toFixed(0) + 'L' } }
+        }
+      }
+    }
+  );
+  setSyncLabel('sync-revenue-trend', m);
+}
+
+let concentrationChart;
+function renderConcentration(resp) {
+  const d = resp.data, m = resp.meta;
+  const labels = d.slices.map(s => s.name);
+  const values = d.slices.map(s => s.value);
+  const colors = ['#4f8ef7','#22c55e','#f59e0b','#a855f7','#ef4444','#64748b'];
+  if (concentrationChart) concentrationChart.destroy();
+  concentrationChart = new Chart(
+    document.getElementById('chart-concentration').getContext('2d'),
+    {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: colors,
+          borderWidth: 0,
+          hoverOffset: 8,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'right', labels: { color: '#e2e8f0', font: { size: 11 } } }
+        }
+      }
+    }
+  );
+  setSyncLabel('sync-concentration', m);
+}
+
+function renderTopCustomers(resp) {
+  const d = resp.data, m = resp.meta;
+  const maxVal = d.customers[0]?.revenue || 1;
+  document.getElementById('bar-top-customers').innerHTML =
+    barList(d.customers, c => c.customer_name, c => c.revenue, maxVal);
+  setSyncLabel('sync-top-customers', m);
+  setStale('card-top-customers', m.stale);
+}
+
+function renderTopSkus(resp) {
+  const d = resp.data, m = resp.meta;
+  const maxVal = d.skus[0]?.revenue || 1;
+  document.getElementById('bar-top-skus').innerHTML =
+    barList(d.skus, s => s.sku_name || s.sku_code, s => s.revenue, maxVal);
+  setSyncLabel('sync-top-skus', m);
+  setStale('card-top-skus', m.stale);
+}
+
+function renderInventorySummary(resp) {
+  const d = resp.data, m = resp.meta;
+  const negFlag = d.negative_stock_count > 0
+    ? `<span class="pill pill-red">⚠ ${d.negative_stock_count} negative</span>`
+    : `<span class="pill pill-green">✓ no negatives</span>`;
+  document.getElementById('inventory-kpis').innerHTML = `
+    <div class="kpi"><div class="kpi-value">${INR(d.total_value)}</div><div class="kpi-label">Stock value</div></div>
+    <div class="kpi"><div class="kpi-value">${d.total_skus}</div><div class="kpi-label">SKUs</div></div>
+    <div class="kpi">${negFlag}</div>
+  `;
+  setSyncLabel('sync-inventory-summary', m);
+  setStale('card-inventory-summary', m.stale);
+}
+
+function renderInvCategories(resp) {
+  const d = resp.data, m = resp.meta;
+  const maxVal = d.categories[0]?.total_value || 1;
+  document.getElementById('bar-inv-categories').innerHTML =
+    barList(d.categories, c => c.category, c => c.total_value, maxVal);
+  setSyncLabel('sync-inventory-categories', m);
+}
+
+function renderTopHoldings(resp) {
+  const d = resp.data, m = resp.meta;
+  document.getElementById('tbl-top-holdings').innerHTML = `
+    <table>
+      <thead><tr><th>SKU</th><th class="right">Qty</th><th class="right">Value</th></tr></thead>
+      <tbody>${d.skus.slice(0,8).map(s => `
+        <tr>
+          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+              title="${s.sku_name||s.sku_code}">${s.sku_name||s.sku_code}</td>
+          <td class="right">${Number(s.quantity).toLocaleString()}</td>
+          <td class="right">${INR(s.total_value)}</td>
+        </tr>`).join('')}</tbody>
+    </table>`;
+  setSyncLabel('sync-top-holdings', m);
+}
+
+function renderPurchasesSummary(resp) {
+  const d = resp.data, m = resp.meta;
+  document.getElementById('purchases-kpis').innerHTML = `
+    <div class="kpi"><div class="kpi-value">${INR(d.period_spend)}</div><div class="kpi-label">30-day spend</div></div>
+    <div class="kpi"><div class="kpi-value">${d.vendor_count}</div><div class="kpi-label">Vendors</div></div>
+    <div class="kpi">
+      <div class="kpi-value" style="color:${d.overdue_po_count>0?'var(--red)':'var(--green)'}">${d.overdue_po_count}</div>
+      <div class="kpi-label">Overdue POs</div>
+    </div>
+  `;
+  setSyncLabel('sync-purchases-summary', m);
+  setStale('card-purchases-summary', m.stale);
+}
+
+function renderTopVendors(resp) {
+  const d = resp.data, m = resp.meta;
+  const maxVal = d.vendors[0]?.spend || 1;
+  document.getElementById('bar-top-vendors').innerHTML =
+    barList(d.vendors, v => v.vendor_name, v => v.spend, maxVal);
+  setSyncLabel('sync-top-vendors', m);
+}
+
+function renderProductionSummary(resp) {
+  const d = resp.data, m = resp.meta;
+  document.getElementById('production-kpis').innerHTML = `
+    <div class="kpi"><div class="kpi-value">${Number(d.fg_produced).toLocaleString()}</div><div class="kpi-label">FG produced</div></div>
+    <div class="kpi">
+      <div class="kpi-value" style="color:${d.reject_rate_pct>5?'var(--red)':'var(--green)'}">${d.reject_rate_pct}%</div>
+      <div class="kpi-label">Reject rate</div>
+    </div>
+    <div class="kpi"><div class="kpi-value">${d.wip_count}</div><div class="kpi-label">WIP orders</div></div>
+  `;
+  setSyncLabel('sync-production-summary', m);
+  setStale('card-production-summary', m.stale);
+}
+
+function renderOrdersSummary(resp) {
+  const d = resp.data, m = resp.meta;
+  document.getElementById('orders-kpis').innerHTML = `
+    <div class="kpi"><div class="kpi-value">${d.open_order_count}</div><div class="kpi-label">Open orders</div></div>
+    <div class="kpi"><div class="kpi-value">${INR(d.open_order_value)}</div><div class="kpi-label">Open value</div></div>
+    <div class="kpi">
+      <div class="kpi-value" style="color:${d.overdue_count>0?'var(--red)':'var(--green)'}">${d.overdue_count}</div>
+      <div class="kpi-label">Overdue</div>
+    </div>
+  `;
+  setSyncLabel('sync-orders-summary', m);
+  setStale('card-orders-summary', m.stale);
+}
+
+function renderArAging(resp) {
+  const d = resp.data, m = resp.meta;
+  document.getElementById('tbl-ar-aging').innerHTML = `
+    <div class="kpi-row" style="margin-bottom:10px">
+      <div class="kpi">
+        <div class="kpi-value" style="color:var(--red)">${INR(d.overdue_value)}</div>
+        <div class="kpi-label">Overdue (${d.overdue_count} inv)</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value">${INR(d.total_outstanding)}</div>
+        <div class="kpi-label">Total outstanding</div>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>Bucket</th><th class="right">Count</th><th class="right">Value</th></tr></thead>
+      <tbody>${d.aging_buckets.map(b => `
+        <tr>
+          <td><span class="pill ${b.bucket==='90+'?'pill-red':b.bucket==='61-90'?'pill-yellow':'pill-blue'}">${b.bucket} days</span></td>
+          <td class="right">${b.count}</td>
+          <td class="right">${INR(b.value)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  setSyncLabel('sync-ar-aging', m);
+  setStale('card-ar-aging', m.stale);
+}
+
+function renderArCustomers(resp) {
+  const d = resp.data, m = resp.meta;
+  document.getElementById('tbl-ar-customers').innerHTML = `
+    <table>
+      <thead><tr><th>Customer</th><th class="right">Outstanding</th><th class="right">Days</th></tr></thead>
+      <tbody>${d.customers.slice(0,8).map(c => `
+        <tr>
+          <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+              title="${c.customer_name}">${c.customer_name}</td>
+          <td class="right">${INR(c.outstanding)}</td>
+          <td class="right" style="color:${c.oldest_days>60?'var(--red)':c.oldest_days>30?'var(--yellow)':'var(--text)'}">${c.oldest_days}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  setSyncLabel('sync-ar-customers', m);
+  setStale('card-ar-customers', m.stale);
+}
+
+function renderOverduePOs(resp) {
+  const d = resp.data, m = resp.meta;
+  const total = d.total_overdue_count;
+  document.getElementById('tbl-overdue-pos').innerHTML = total === 0
+    ? '<div style="color:var(--green);font-size:12px">✓ No overdue POs</div>'
+    : `<div style="margin-bottom:8px;font-size:12px;color:var(--red)">${total} overdue — ${INR(d.total_value_at_risk)} at risk</div>
+       <table>
+         <thead><tr><th>PO</th><th>Vendor</th><th class="right">Days</th></tr></thead>
+         <tbody>${d.pos.slice(0,6).map(p => `
+           <tr>
+             <td>${p.po_number}</td>
+             <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis">${p.vendor_name}</td>
+             <td class="right" style="color:var(--red)">${p.days_overdue}</td>
+           </tr>`).join('')}
+         </tbody>
+       </table>`;
+  setSyncLabel('sync-overdue-pos', m);
+  setStale('card-overdue-pos', total > 0);
+}
+
+function renderWip(resp) {
+  const d = resp.data, m = resp.meta;
+  document.getElementById('tbl-wip').innerHTML = `
+    <table>
+      <thead><tr><th>Status</th><th class="right">Count</th><th class="right">Planned</th></tr></thead>
+      <tbody>${d.status_breakdown.map(s => `
+        <tr>
+          <td><span class="pill ${s.status==='wip'?'pill-yellow':s.status==='completed'?'pill-green':'pill-blue'}">${s.status}</span></td>
+          <td class="right">${s.count}</td>
+          <td class="right">${Number(s.planned_qty).toLocaleString()}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  setSyncLabel('sync-wip', m);
+}
+
+function renderOverdueOrders(resp) {
+  const d = resp.data, m = resp.meta;
+  const total = d.total_overdue_count;
+  document.getElementById('tbl-overdue-orders').innerHTML = total === 0
+    ? '<div style="color:var(--green);font-size:12px">✓ No overdue orders</div>'
+    : `<div style="margin-bottom:8px;font-size:12px;color:var(--red)">${total} overdue — ${INR(d.total_value)}</div>
+       <table>
+         <thead><tr><th>Order</th><th>Customer</th><th class="right">Days</th></tr></thead>
+         <tbody>${d.orders.slice(0,6).map(o => `
+           <tr>
+             <td>${o.order_number}</td>
+             <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis">${o.customer_name}</td>
+             <td class="right" style="color:var(--red)">${o.days_overdue}</td>
+           </tr>`).join('')}
+         </tbody>
+       </table>`;
+  setSyncLabel('sync-overdue-orders', m);
+  setStale('card-overdue-orders', total > 0);
+}
+
+// ── Sync health ───────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const h = await apiFetch('/dashboard/sync/health');
+    const dot = document.getElementById('health-dot');
+    const lbl = document.getElementById('health-label');
+    if (h.all_healthy) {
+      dot.className = 'health-dot';
+      lbl.textContent = 'All pipelines healthy';
+    } else {
+      const failed = h.pipelines.filter(p => p.status === 'failed').length;
+      const stale  = h.pipelines.filter(p => p.stale).length;
+      dot.className = failed > 0 ? 'health-dot error' : 'health-dot warn';
+      lbl.textContent = failed > 0
+        ? `${failed} pipeline(s) failed`
+        : `${stale} pipeline(s) stale`;
+    }
+  } catch (e) {
+    document.getElementById('health-dot').className = 'health-dot error';
+    document.getElementById('health-label').textContent = 'API unreachable';
+  }
+}
+
+// ── Manual sync trigger ───────────────────────────────────────────────────
+async function triggerSync(pipeline) {
+  const btn = event.target;
+  btn.textContent = '…';
+  btn.disabled = true;
+  try {
+    await fetch(`${API}/dashboard/sync/trigger/${pipeline}`, { method: 'POST' });
+    await loadAll();
+  } catch(e) {
+    console.error('Sync trigger failed', e);
+  } finally {
+    btn.textContent = '↻';
+    btn.disabled = false;
+  }
+}
+
+// ── Load all panels ───────────────────────────────────────────────────────
+async function loadAll() {
+  document.getElementById('last-refresh').textContent =
+    'Refreshed at ' + new Date().toLocaleTimeString();
+
+  const calls = [
+    apiFetch('/dashboard/revenue/summary').then(renderRevenueSummary),
+    apiFetch('/dashboard/revenue/trend').then(renderRevenueTrend),
+    apiFetch('/dashboard/revenue/concentration').then(renderConcentration),
+    apiFetch('/dashboard/revenue/customers').then(renderTopCustomers),
+    apiFetch('/dashboard/revenue/skus').then(renderTopSkus),
+    apiFetch('/dashboard/inventory/summary').then(renderInventorySummary),
+    apiFetch('/dashboard/inventory/categories').then(renderInvCategories),
+    apiFetch('/dashboard/inventory/top-holdings').then(renderTopHoldings),
+    apiFetch('/dashboard/purchases/summary').then(renderPurchasesSummary),
+    apiFetch('/dashboard/purchases/vendors').then(renderTopVendors),
+    apiFetch('/dashboard/production/summary').then(renderProductionSummary),
+    apiFetch('/dashboard/orders/summary').then(renderOrdersSummary),
+    apiFetch('/dashboard/ar/aging').then(renderArAging),
+    apiFetch('/dashboard/ar/customers').then(renderArCustomers),
+    apiFetch('/dashboard/purchases/overdue-pos').then(renderOverduePOs),
+    apiFetch('/dashboard/production/wip').then(renderWip),
+    apiFetch('/dashboard/orders/overdue').then(renderOverdueOrders),
+    checkHealth(),
+  ];
+
+  await Promise.allSettled(calls);
+}
+
+function refreshAll() { loadAll(); }
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+loadAll();
+// Auto-refresh every 5 minutes
+setInterval(loadAll, 5 * 60 * 1000);
+</script>
+</body>
+</html>
