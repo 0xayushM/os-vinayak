@@ -18,7 +18,7 @@ from datetime import date
 from typing import Optional
 
 import psycopg2.extras
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from vinayak.pipelines.base import BasePipeline
 
@@ -35,6 +35,24 @@ class ProcessRoutingRow(BaseModel):
     sequence_number: Optional[int] = None
     standard_hours: Optional[float] = None
     machine_centre: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def remap_api_fields(cls, data):
+        if not isinstance(data, dict):
+            return data
+        raw_id = str(data.get("uuid") or data.get("process_id") or "").strip()
+        if not raw_id:
+            raise ValueError("Row has no uuid/process_id — cannot create raw_id")
+        return {
+            "raw_id":          raw_id,
+            "sku_code":        data.get("itemid"),
+            "sku_name":        data.get("fg_name"),
+            "process_name":    data.get("full_routing_name"),
+            "sequence_number": None,
+            "standard_hours":  None,
+            "machine_centre":  None,
+        }
 
     @field_validator("sequence_number", mode="before")
     @classmethod
@@ -87,7 +105,7 @@ class ProcessRoutingPipeline(BasePipeline):
                 sequence_number = EXCLUDED.sequence_number,
                 standard_hours  = EXCLUDED.standard_hours,
                 machine_centre  = EXCLUDED.machine_centre,
-                updated_at      = NOW()
+                fetched_at      = NOW()
         """
 
         with conn.cursor() as cur:

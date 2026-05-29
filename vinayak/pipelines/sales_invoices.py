@@ -22,6 +22,7 @@ import psycopg2.extras
 from pydantic import BaseModel, field_validator, model_validator
 
 from vinayak.pipelines.base import BasePipeline
+from vinayak.pipelines.helpers import epoch_to_date
 
 logger = logging.getLogger(__name__)
 
@@ -46,17 +47,37 @@ class SalesInvoiceRow(BaseModel):
     due_date: Optional[date] = None
     salesperson: Optional[str] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def remap_api_fields(cls, data):
+        if not isinstance(data, dict):
+            return data
+        raw_id = str(data.get("uuid") or data.get("document_id") or "").strip()
+        if not raw_id:
+            raise ValueError("Row has no uuid/document_id — cannot create raw_id")
+        return {
+            "raw_id":         raw_id,
+            "invoice_date":   data.get("document_date"),
+            "invoice_number": data.get("document_no_text"),
+            "customer_name":  data.get("customer_name"),
+            "customer_code":  data.get("counter_party_uuid"),
+            "sku_code":       data.get("itemid"),
+            "sku_name":       data.get("item_name"),
+            "category":       data.get("product_category"),
+            "quantity":       data.get("quantity"),
+            "unit_price":     data.get("item_price"),
+            "line_total":     data.get("item_total_value"),
+            "tax_amount":     data.get("tax"),
+            "invoice_total":  data.get("grand_total"),
+            "payment_status": data.get("payment_status"),
+            "due_date":       data.get("payment_due_date"),
+            "salesperson":    data.get("creator_name"),
+        }
+
     @field_validator("invoice_date", "due_date", mode="before")
     @classmethod
     def coerce_date(cls, v):
-        if v is None or v == "":
-            return None
-        if isinstance(v, date):
-            return v
-        try:
-            return date.fromisoformat(str(v)[:10])
-        except (ValueError, TypeError):
-            return None
+        return epoch_to_date(v)
 
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
@@ -118,7 +139,7 @@ class SalesInvoicesPipeline(BasePipeline):
                 payment_status  = EXCLUDED.payment_status,
                 due_date        = EXCLUDED.due_date,
                 salesperson     = EXCLUDED.salesperson,
-                updated_at      = NOW()
+                fetched_at      = NOW()
         """
 
         with conn.cursor() as cur:

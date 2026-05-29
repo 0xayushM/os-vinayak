@@ -18,9 +18,10 @@ from datetime import date
 from typing import Optional
 
 import psycopg2.extras
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from vinayak.pipelines.base import BasePipeline
+from vinayak.pipelines.helpers import epoch_to_date
 
 logger = logging.getLogger(__name__)
 
@@ -41,17 +42,34 @@ class GRNQIRRow(BaseModel):
     rejected_qty: Optional[float] = None
     accepted_qty: Optional[float] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def remap_api_fields(cls, data):
+        if not isinstance(data, dict):
+            return data
+        raw_id = str(data.get("uuid") or data.get("document_id") or "").strip()
+        if not raw_id:
+            raise ValueError("Row has no uuid/document_id — cannot create raw_id")
+        received = data.get("received_quantity")
+        return {
+            "raw_id":       raw_id,
+            "grn_date":     data.get("inward_date"),
+            "grn_number":   data.get("inward_number"),
+            "vendor_name":  data.get("supplier_name"),
+            "vendor_code":  None,
+            "po_number":    data.get("po_number"),
+            "item_code":    data.get("itemid"),
+            "item_name":    data.get("item_name"),
+            "ordered_qty":  None,
+            "received_qty": received,
+            "rejected_qty": None,
+            "accepted_qty": received,
+        }
+
     @field_validator("grn_date", mode="before")
     @classmethod
     def coerce_date(cls, v):
-        if v is None or v == "":
-            return None
-        if isinstance(v, date):
-            return v
-        try:
-            return date.fromisoformat(str(v)[:10])
-        except (ValueError, TypeError):
-            return None
+        return epoch_to_date(v)
 
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
@@ -105,7 +123,7 @@ class GRNQIRPipeline(BasePipeline):
                 received_qty = EXCLUDED.received_qty,
                 rejected_qty = EXCLUDED.rejected_qty,
                 accepted_qty = EXCLUDED.accepted_qty,
-                updated_at   = NOW()
+                fetched_at   = NOW()
         """
 
         with conn.cursor() as cur:

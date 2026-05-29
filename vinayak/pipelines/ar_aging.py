@@ -20,6 +20,7 @@ import psycopg2.extras
 from pydantic import BaseModel, field_validator, model_validator
 
 from vinayak.pipelines.base import BasePipeline
+from vinayak.pipelines.helpers import epoch_to_date
 
 logger = logging.getLogger(__name__)
 
@@ -38,34 +39,41 @@ class ARAgingRow(BaseModel):
     days_overdue: Optional[int] = None
     aging_bucket: Optional[str] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def remap_api_fields(cls, data):
+        if not isinstance(data, dict):
+            return data
+        raw_id = str(data.get("uuid") or data.get("id") or "").strip()
+        if not raw_id:
+            raise ValueError("Row has no uuid/id — cannot create raw_id")
+        return {
+            "raw_id":             raw_id,
+            "customer_name":      data.get("company_name"),
+            "customer_code":      None,
+            "invoice_number":     data.get("document_number"),
+            "invoice_date":       data.get("document_date"),
+            "due_date":           data.get("payment_date"),
+            "invoice_amount":     data.get("amount_owe"),
+            "outstanding_amount": data.get("balance_amount"),
+            "days_overdue":       None,
+            "aging_bucket":       None,
+        }
+
     @field_validator("invoice_date", "due_date", mode="before")
     @classmethod
     def coerce_date(cls, v):
-        if v is None or v == "":
-            return None
-        if isinstance(v, date):
-            return v
-        try:
-            return date.fromisoformat(str(v)[:10])
-        except (ValueError, TypeError):
-            return None
-
-    @field_validator("days_overdue", mode="before")
-    @classmethod
-    def coerce_int(cls, v):
-        if v is None or v == "":
-            return None
-        try:
-            return int(v)
-        except (ValueError, TypeError):
-            return None
+        return epoch_to_date(v)
 
     @model_validator(mode="after")
-    def compute_aging_bucket(self) -> "ARAgingRow":
+    def compute_days_and_bucket(self) -> "ARAgingRow":
         """
-        Derive aging_bucket from days_overdue when it is not provided by the
-        source report.  Buckets: 0-30, 31-60, 61-90, 90+.
+        Compute days_overdue from due_date vs today, then derive aging_bucket.
+        Buckets: 0-30, 31-60, 61-90, 90+.
         """
+        if self.due_date is not None and self.days_overdue is None:
+            delta = (date.today() - self.due_date).days
+            self.days_overdue = max(0, delta)
         if self.aging_bucket is None and self.days_overdue is not None:
             d = self.days_overdue
             if d <= 30:
@@ -126,7 +134,7 @@ class ARAgingPipeline(BasePipeline):
                 outstanding_amount = EXCLUDED.outstanding_amount,
                 days_overdue       = EXCLUDED.days_overdue,
                 aging_bucket       = EXCLUDED.aging_bucket,
-                updated_at         = NOW()
+                fetched_at         = NOW()
         """
 
         with conn.cursor() as cur:

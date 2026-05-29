@@ -18,9 +18,10 @@ from datetime import date
 from typing import Optional
 
 import psycopg2.extras
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from vinayak.pipelines.base import BasePipeline
+from vinayak.pipelines.helpers import epoch_to_date
 
 logger = logging.getLogger(__name__)
 
@@ -41,17 +42,33 @@ class PurchaseInvoiceRow(BaseModel):
     tax_amount: Optional[float] = None
     invoice_total: Optional[float] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def remap_api_fields(cls, data):
+        if not isinstance(data, dict):
+            return data
+        raw_id = str(data.get("uuid") or data.get("document_id") or "").strip()
+        if not raw_id:
+            raise ValueError("Row has no uuid/document_id — cannot create raw_id")
+        return {
+            "raw_id":         raw_id,
+            "invoice_date":   data.get("document_date"),
+            "invoice_number": data.get("document_no_text"),
+            "vendor_name":    data.get("supplier_name"),
+            "vendor_code":    None,
+            "item_code":      data.get("itemid"),
+            "item_name":      data.get("item_name"),
+            "quantity":       data.get("quantity"),
+            "unit_price":     data.get("item_price"),
+            "line_total":     data.get("item_total_value"),
+            "tax_amount":     data.get("tax"),
+            "invoice_total":  data.get("grand_total"),
+        }
+
     @field_validator("invoice_date", mode="before")
     @classmethod
     def coerce_date(cls, v):
-        if v is None or v == "":
-            return None
-        if isinstance(v, date):
-            return v
-        try:
-            return date.fromisoformat(str(v)[:10])
-        except (ValueError, TypeError):
-            return None
+        return epoch_to_date(v)
 
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
@@ -105,7 +122,7 @@ class PurchaseInvoicesPipeline(BasePipeline):
                 line_total     = EXCLUDED.line_total,
                 tax_amount     = EXCLUDED.tax_amount,
                 invoice_total  = EXCLUDED.invoice_total,
-                updated_at     = NOW()
+                fetched_at     = NOW()
         """
 
         with conn.cursor() as cur:

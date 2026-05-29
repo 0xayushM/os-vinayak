@@ -21,7 +21,7 @@ from datetime import date
 from typing import Optional
 
 import psycopg2.extras
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from vinayak.pipelines.base import BasePipeline
 
@@ -40,6 +40,27 @@ class InventoryValuationRow(BaseModel):
     unit_cost: Optional[float] = None
     total_value: Optional[float] = None
     is_raw_material: Optional[bool] = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def remap_api_fields(cls, data):
+        if not isinstance(data, dict):
+            return data
+        raw_id = str(data.get("uuid") or data.get("product_id") or "").strip()
+        if not raw_id:
+            raise ValueError("Row has no uuid/product_id — cannot create raw_id")
+        item_type = str(data.get("type") or "").strip().lower()
+        return {
+            "raw_id":          raw_id,
+            "sku_code":        data.get("itemid"),
+            "sku_name":        data.get("name"),
+            "category":        data.get("category"),
+            "warehouse":       None,
+            "quantity":        data.get("cal_final_stock"),
+            "unit_cost":       data.get("average_price"),
+            "total_value":     data.get("cal_final_stock_cost"),
+            "is_raw_material": item_type == "raw material",
+        }
 
     @field_validator("is_raw_material", mode="before")
     @classmethod
@@ -100,7 +121,7 @@ class InventoryValuationPipeline(BasePipeline):
                 unit_cost       = EXCLUDED.unit_cost,
                 total_value     = EXCLUDED.total_value,
                 is_raw_material = EXCLUDED.is_raw_material,
-                updated_at      = NOW()
+                fetched_at      = NOW()
         """
 
         with conn.cursor() as cur:
