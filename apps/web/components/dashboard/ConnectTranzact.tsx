@@ -1,10 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle, AlertTriangle, Loader2, Plug } from "lucide-react";
+import { CheckCircle, AlertTriangle, Loader2, Plug, Circle, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
 type Step = "idle" | "saving" | "testing" | "syncing" | "done" | "error";
+
+type PipelineStatus = "pending" | "running" | "success" | "failed";
+
+interface PipelineProgress {
+  key: string;
+  label: string;
+  status: PipelineStatus;
+  rows: number | null;
+  error: string | null;
+}
+
+interface SyncState {
+  running: boolean;
+  total: number;
+  completed: number;
+  current: string | null;
+  error: string | null;
+  pipelines: PipelineProgress[];
+}
 
 interface Props {
   /** Called once the connection is verified AND the initial sync has finished. */
@@ -25,31 +44,27 @@ export default function ConnectTranzact({ onConnected, compact = false }: Props)
   const [password, setPassword] = useState("");
   const [step, setStep] = useState<Step>("idle");
   const [message, setMessage] = useState("");
+  const [sync, setSync] = useState<SyncState | null>(null);
 
   const busy = step === "saving" || step === "testing" || step === "syncing";
 
-  async function pollSyncUntilData(maxSeconds = 180) {
+  async function pollSyncUntilDone(maxSeconds = 600) {
     const start = Date.now();
     while (Date.now() - start < maxSeconds * 1000) {
-      await new Promise((r) => setTimeout(r, 4000));
       try {
-        const res = await fetch("/api/dashboard/sync-health", { credentials: "include" });
+        const res = await fetch("/api/connections/tranzact/sync", { credentials: "include" });
         if (res.ok) {
-          const health = await res.json();
-          const runs = health?.runs ?? [];
-          const succeeded = runs.filter((r: { status: string }) => r.status === "success").length;
-          setMessage(`Syncing data from TranzAct… ${succeeded}/10 reports loaded`);
-          // As soon as the first few reports land, the dashboard is useful.
-          if (succeeded >= 1) {
-            const stillRunning = await fetch("/api/connections/tranzact/sync", {
-              credentials: "include",
-            }).then((r) => r.json()).catch(() => ({ running: true }));
-            if (!stillRunning.running || succeeded >= 5) return true;
+          const state: SyncState = await res.json();
+          setSync(state);
+          // Finished when the worker stops running and has processed everything.
+          if (!state.running && state.total > 0 && state.completed >= state.total) {
+            return true;
           }
         }
       } catch {
         /* keep polling */
       }
+      await new Promise((r) => setTimeout(r, 2000));
     }
     return true; // give up waiting but let the user into the dashboard
   }
@@ -92,8 +107,8 @@ export default function ConnectTranzact({ onConnected, compact = false }: Props)
         credentials: "include",
       });
 
-      // 4. Poll until data lands
-      await pollSyncUntilData();
+      // 4. Poll until all reports finish
+      await pollSyncUntilDone();
 
       setStep("done");
       setMessage("All set — loading your dashboard.");
@@ -183,6 +198,64 @@ export default function ConnectTranzact({ onConnected, compact = false }: Props)
           {step === "error" && <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />}
           {busy && <Loader2 className="w-3.5 h-3.5 mt-0.5 shrink-0 animate-spin" />}
           {message}
+        </div>
+      )}
+
+      {/* ── Sync progress tracker ──────────────────────────────────────────── */}
+      {(step === "syncing" || step === "done") && sync && sync.total > 0 && (
+        <div className="space-y-3">
+          {/* Progress bar */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-zinc-400">
+              <span>Pulling reports from TranzAct</span>
+              <span className="tabular-nums">
+                {sync.completed}/{sync.total}
+              </span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+              <div
+                className="h-full rounded-full bg-blue-500 transition-all duration-500"
+                style={{ width: `${Math.round((sync.completed / sync.total) * 100)}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Per-report checklist */}
+          <ul className="space-y-1.5">
+            {sync.pipelines.map((p) => (
+              <li key={p.key} className="flex items-center gap-2 text-xs">
+                {p.status === "success" && (
+                  <CheckCircle className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                )}
+                {p.status === "running" && (
+                  <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-blue-400" />
+                )}
+                {p.status === "failed" && (
+                  <XCircle className="w-3.5 h-3.5 shrink-0 text-red-400" />
+                )}
+                {p.status === "pending" && (
+                  <Circle className="w-3.5 h-3.5 shrink-0 text-zinc-600" />
+                )}
+                <span
+                  className={cn(
+                    "flex-1",
+                    p.status === "success" && "text-zinc-300",
+                    p.status === "running" && "text-zinc-200",
+                    p.status === "failed" && "text-red-400",
+                    p.status === "pending" && "text-zinc-600",
+                  )}
+                >
+                  {p.label}
+                </span>
+                {p.status === "success" && p.rows != null && (
+                  <span className="tabular-nums text-zinc-600">{p.rows} rows</span>
+                )}
+                {p.status === "failed" && (
+                  <span className="text-zinc-600">failed</span>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

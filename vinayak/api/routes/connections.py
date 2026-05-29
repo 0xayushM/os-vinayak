@@ -46,11 +46,20 @@ router = APIRouter()
 # order. State is process-local; the frontend polls /dashboard/sync/health to
 # render progress.
 _sync_lock = threading.Lock()
-_sync_state = {"running": False, "started_at": None, "error": None}
+_sync_state = {
+    "running": False,
+    "started_at": None,
+    "finished_at": None,
+    "error": None,
+    "total": 0,
+    "completed": 0,
+    "current": None,
+    "pipelines": [],   # [{"key", "label", "status", "rows", "error"}]
+}
 
 
 def _full_sync_plan():
-    """(PipelineClass, from_days_back, label) for every pipeline, ordered
+    """(PipelineClass, from_days_back, key, label) for every pipeline, ordered
     fast→slow so operational panels light up first."""
     from vinayak.pipelines.ar_aging import ARAgingPipeline
     from vinayak.pipelines.sales_orders import SalesOrdersPipeline
@@ -64,16 +73,16 @@ def _full_sync_plan():
     from vinayak.pipelines.process_routing import ProcessRoutingPipeline
 
     return [
-        (ARAgingPipeline, 1),
-        (SalesOrdersPipeline, 7),
-        (PurchaseOrdersPipeline, 7),
-        (InventoryValuationPipeline, 1),
-        (ProcessDetailsPipeline, 7),
-        (SalesInvoicesPipeline, 30),
-        (PurchaseInvoicesPipeline, 30),
-        (GRNQIRPipeline, 30),
-        (SalesQuotationsPipeline, 30),
-        (ProcessRoutingPipeline, 30),
+        (ARAgingPipeline, 1, "ar_aging", "AR Aging"),
+        (SalesOrdersPipeline, 7, "sales_orders", "Sales Orders"),
+        (PurchaseOrdersPipeline, 7, "purchase_orders", "Purchase Orders"),
+        (InventoryValuationPipeline, 1, "inventory_valuation", "Inventory Valuation"),
+        (ProcessDetailsPipeline, 7, "process_details", "Production Details"),
+        (SalesInvoicesPipeline, 30, "sales_invoices", "Sales Invoices"),
+        (PurchaseInvoicesPipeline, 30, "purchase_invoices", "Purchase Invoices"),
+        (GRNQIRPipeline, 30, "grn_qir", "GRN / Quality"),
+        (SalesQuotationsPipeline, 30, "sales_quotations", "Sales Quotations"),
+        (ProcessRoutingPipeline, 30, "process_routing", "Process Routing"),
     ]
 
 
@@ -82,6 +91,26 @@ def _run_full_sync(email: str, password: str) -> None:
     every pipeline once. Per-pipeline failures are logged (recorded in
     tz_sync_runs by BasePipeline) but never abort the whole run."""
     global _sync_state
+    import datetime as _dt
+    plan = _full_sync_plan()
+
+    # Seed the per-pipeline checklist up front so the UI can render all rows.
+    with _sync_lock:
+        _sync_state["total"] = len(plan)
+        _sync_state["completed"] = 0
+        _sync_state["current"] = None
+        _sync_state["pipelines"] = [
+            {"key": key, "label": label, "status": "pending", "rows": None, "error": None}
+            for _, _, key, label in plan
+        ]
+
+    def _set(key, **fields):
+        with _sync_lock:
+            for p in _sync_state["pipelines"]:
+                if p["key"] == key:
+                    p.update(fields)
+                    break
+
     try:
         # Prime the in-memory token cache using the credentials the user just
         # connected with, so the whole sync is driven by THEIR account.
@@ -93,11 +122,19 @@ def _run_full_sync(email: str, password: str) -> None:
             force_refresh=True,
         )
         today = date.today()
-        for PipelineCls, days_back in _full_sync_plan():
+        for PipelineCls, days_back, key, _label in plan:
+            with _sync_lock:
+                _sync_state["current"] = key
+            _set(key, status="running")
             try:
-                PipelineCls().run(today - timedelta(days=days_back), today)
+                rows = PipelineCls().run(today - timedelta(days=days_back), today)
+                _set(key, status="success", rows=rows)
             except Exception as exc:  # noqa: BLE001
                 logger.error("Full sync: %s failed: %s", PipelineCls.__name__, exc)
+                _set(key, status="failed", error=str(exc))
+            finally:
+                with _sync_lock:
+                    _sync_state["completed"] += 1
     except Exception as exc:  # noqa: BLE001
         logger.error("Full sync aborted: %s", exc)
         with _sync_lock:
@@ -105,6 +142,8 @@ def _run_full_sync(email: str, password: str) -> None:
     finally:
         with _sync_lock:
             _sync_state["running"] = False
+            _sync_state["current"] = None
+            _sync_state["finished_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
 
 # ── Fernet encryption ─────────────────────────────────────────────────────────
 _fernet = None
@@ -357,6 +396,7 @@ def trigger_full_sync(user: TokenPayload = Depends(get_current_user)):
         _sync_state.update(
             running=True,
             started_at=_dt.datetime.now(_dt.timezone.utc).isoformat(),
+            finished_at=None,
             error=None,
         )
 

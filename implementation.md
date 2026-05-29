@@ -29,9 +29,9 @@ There are **two** env files: one for the FastAPI backend (repo root) and one for
 `vinayak/config.py` loads this via `load_dotenv()`. `TRANZACT_EMAIL`, `TRANZACT_PASSWORD`, and `DATABASE_URL` are **required** (the process won't start without them).
 
 ```dotenv
-# TranzAct (the KBrushes ERP account)
-TRANZACT_EMAIL=crm@protegere.in
-TRANZACT_PASSWORD=••••••••
+# TranzAct (the ERP account you connect through the UI)
+TRANZACT_EMAIL=your@email.com
+TRANZACT_PASSWORD=your_password
 TRANZACT_BASE_URL=https://be.letstranzact.com
 TRANZACT_REPORTING_URL=https://reporting.letstranzact.com
 TRANZACT_REQUESTS_PER_MINUTE=8

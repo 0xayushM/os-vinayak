@@ -44,7 +44,7 @@ class BasePipeline(ABC):
 
     # ── Public methods ────────────────────────────────────────────────────────
 
-    def run(self, from_date: date, to_date: date, is_backfill: bool = False) -> None:
+    def run(self, from_date: date, to_date: date, is_backfill: bool = False) -> int:
         """
         Full pipeline run:
           1. Open a DB connection and log 'running' to tz_sync_runs
@@ -52,6 +52,8 @@ class BasePipeline(ABC):
           3. Validate rows with Pydantic (bad rows are skipped, not raised)
           4. Upsert valid rows into the cached table
           5. Update tz_sync_runs with 'success' or 'failed'
+
+        Returns the number of rows upserted.
         """
         conn = psycopg2.connect(DATABASE_URL)
         run_id = self._start_run(conn, is_backfill)
@@ -70,6 +72,7 @@ class BasePipeline(ABC):
                 "%s: ✅  fetched=%d upserted=%d",
                 self.PIPELINE_NAME, rows_fetched, rows_upserted,
             )
+            return rows_upserted
         except Exception as exc:
             self._fail_run(conn, run_id, str(exc))
             logger.error("%s: ❌  %s", self.PIPELINE_NAME, exc)
