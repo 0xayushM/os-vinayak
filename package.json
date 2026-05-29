@@ -1,23 +1,17 @@
 {
-  "name": "os-vinayak",
+  "name": "vinayak-brain-os",
   "version": "0.1.0",
   "private": true,
+  "description": "Vinayak Brain OS — TranzAct dashboard (pnpm monorepo). Next.js app in apps/web; Python/FastAPI backend in vinayak/.",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
-  },
-  "dependencies": {
-    "next": "16.2.6",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "dev": "pnpm --filter @vinayak/web dev",
+    "build": "pnpm --filter @vinayak/web build",
+    "start": "pnpm --filter @vinayak/web start",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
   }
 }
